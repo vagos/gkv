@@ -1,3 +1,3 @@
-# gitkv
+# gkv
 
-Use `git` repository as a key-value store.
+Use a `git` repository as a key-value store.
