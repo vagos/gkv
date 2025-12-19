@@ -1,46 +1,73 @@
 #!/usr/bin/env sh
 set -e
 
-: "${GIT_KV_REPO:=.gitkv}"
+usage() {
+  echo "Usage: $0 [-r repository_link] [-D/A] key [file/stdin]" 
+  echo "  -r repository_link : Git repository to use (default: \$GIT_KV_REPO)" 
+  echo "  -D                 : Delete the specified key from the kv store" 
+  echo "  -A                 : Append to the specified key in the kv store" 
+  echo "  key                : The key to update in the kv store" 
+  echo "  file/stdin         : File containing the data to store, or '-' for stdin" 
+}
 
-while getopts "r:k:" opt; do
+action="S" # Default action is set
+
+while getopts "r:DAh" opt; do
   case $opt in
     r)
       GIT_KV_REPO="$OPTARG"
       ;;
-    k)
-      key="$OPTARG"
+    D|A)
+      action="$opt"
+      ;;
+    h)
+      usage
+      exit 0
       ;;
     *)
-      echo "Usage: $0 [-r repository link] [-k key] [file/stdin]" >&2 
+      usage
       exit 1
       ;;
   esac
 done
 shift $((OPTIND -1))
 
-file="${file:-$1}"
-[ -z "$key" ] && key="k"
+key="$1"
+file="$2"
+[ -z "$key" ] && usage && exit 1
+[ -z "$GIT_KV_REPO" ] && echo "No target git repository set" >/dev/stderr && exit 1
 
-echo "Updating $key in $GIT_KV_REPO" >/dev/stderr
-if [ "$file" = "-" ] || [ -z "$file" ]; then
-  input_data=$(cat)
-else
-  input_data=$(cat "$file")
+if [ "$action" != "D" ]; then
+  if [ -z "$file" ] || [ "$file" = "-" ]; then
+    input_data=$(cat)
+  else
+    input_data=$(cat "$file")
+  fi
 fi
 
 tmp_dir=$(mktemp -d)
-git clone --depth 1 "$GIT_KV_REPO" "$tmp_dir" 2>/dev/null
+git clone --depth 1 "$GIT_KV_REPO" "$tmp_dir" 2>/dev/stderr || {
+  echo "Failed to clone repository $GIT_KV_REPO" >/dev/stderr
+  rm -rf "$tmp_dir"
+  exit 1
+}
 
 # Commit the input data to the git repository.
 cd "$tmp_dir"
-echo "$input_data" > "$key"
+
+case "$action" in
+  D) git rm -f "$key" 2>/dev/null || true ;;
+  A) echo "$input_data" >> "$key" ;;
+  S) echo "$input_data" > "$key" ;;
+esac
+
+echo "Updating $key in $GIT_KV_REPO" >/dev/stderr
 {
-git add "$key"
+git add .
 git commit -m "$(date)"
 git remote set-url origin "$GIT_KV_REPO"
 git push -f origin HEAD:main
-} 2>/dev/null
+} 2>/dev/stderr
 echo "Updated $key in $GIT_KV_REPO" >/dev/stderr
 
 branch=$(git branch --show-current 2>/dev/null || echo "main")
