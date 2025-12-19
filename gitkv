@@ -1,0 +1,66 @@
+#!/usr/bin/env sh
+set -e
+
+: "${GIT_KV_REPO:=.gitkv}"
+
+while getopts "r:k:" opt; do
+  case $opt in
+    r)
+      GIT_KV_REPO="$OPTARG"
+      ;;
+    k)
+      key="$OPTARG"
+      ;;
+    *)
+      echo "Usage: $0 [-r repository link] [-k key] [file/stdin]" >&2 
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+file="${file:-$1}"
+[ -z "$key" ] && key="k"
+
+echo "Updating $key in $GIT_KV_REPO" >/dev/stderr
+if [ "$file" = "-" ] || [ -z "$file" ]; then
+  input_data=$(cat)
+else
+  input_data=$(cat "$file")
+fi
+
+tmp_dir=$(mktemp -d)
+git clone --depth 1 "$GIT_KV_REPO" "$tmp_dir" 2>/dev/null
+
+# Commit the input data to the git repository.
+cd "$tmp_dir"
+echo "$input_data" > "$key"
+{
+git add "$key"
+git commit -m "$(date)"
+git remote set-url origin "$GIT_KV_REPO"
+git push -f origin HEAD:main
+} 2>/dev/null
+echo "Updated $key in $GIT_KV_REPO" >/dev/stderr
+
+branch=$(git branch --show-current 2>/dev/null || echo "main")
+
+# Output the raw content url that is fetchable via curl/wget
+rawify_url() {
+  case $1 in
+    *github.com*)
+      echo "$1" | tr ':' '/' | sed -e 's/git@/https:\/\//' | sed -e 's/github.com/raw.githubusercontent.com/' -e 's/\/blob\//\//' | sed -e 's/$/\/refs\/heads\/'"$branch\/$key"'/'
+      ;;
+    *)
+      echo "Unsupported git host for raw content URL generation." >&2
+      exit 1
+      ;;
+  esac
+}
+
+repo_url=$(echo "$GIT_KV_REPO" | sed -e 's/\.git$//')
+raw_url=$(rawify_url "$repo_url")
+echo "$raw_url"
+
+# Cleanup
+rm -rf "$tmp_dir"
