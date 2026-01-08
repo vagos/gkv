@@ -3,7 +3,7 @@ set -e
 
 usage() {
   echo "Usage: $0 [-r repository_link] [-D/A] key [file/stdin]" 
-  echo "  -r repository_link : Git repository to use (default: \$GITKV_REPO)" 
+  echo "  -r repository_link : Git repository to use (default: \$KLAVG_REPO)" 
   echo "  -D                 : Delete the specified key from the kv store" 
   echo "  -A                 : Append to the specified key in the kv store" 
   echo "  key                : The key to update in the kv store" 
@@ -15,7 +15,7 @@ action="S" # Default action is set
 while getopts "r:DAh" opt; do
   case $opt in
     r)
-      GITKV_REPO="$OPTARG"
+      KLAVG_REPO="$OPTARG"
       ;;
     D|A)
       action="$opt"
@@ -35,7 +35,8 @@ shift $((OPTIND -1))
 key="$1"
 file="$2"
 [ -z "$key" ] && usage && exit 1
-[ -z "$GITKV_REPO" ] && echo "No target git repository set" >/dev/stderr && exit 1
+[ -z "$KLAVG_REPO" ] && [ -n "$GITKV_REPO" ] && KLAVG_REPO="$GITKV_REPO"
+[ -z "$KLAVG_REPO" ] && echo "No target git repository set" >/dev/stderr && exit 1
 
 if [ "$action" != "D" ]; then
   if [ -z "$file" ] || [ "$file" = "-" ]; then
@@ -46,8 +47,8 @@ if [ "$action" != "D" ]; then
 fi
 
 tmp_dir=$(mktemp -d)
-git clone --depth 1 "$GITKV_REPO" "$tmp_dir" 2>/dev/stderr || {
-  echo "Failed to clone repository $GITKV_REPO" >/dev/stderr
+git clone --depth 1 "$KLAVG_REPO" "$tmp_dir" 2>/dev/stderr || {
+  echo "Failed to clone repository $KLAVG_REPO" >/dev/stderr
   rm -rf "$tmp_dir"
   exit 1
 }
@@ -61,14 +62,14 @@ case "$action" in
   S) echo "$input_data" > "$key" ;;
 esac
 
-echo "Updating $key in $GITKV_REPO" >/dev/stderr
+echo "Updating $key in $KLAVG_REPO" >/dev/stderr
 {
 git add .
 git commit -m "$(date)"
-git remote set-url origin "$GITKV_REPO"
+git remote set-url origin "$KLAVG_REPO"
 git push -f origin HEAD:main
 } 2>/dev/stderr
-echo "Updated $key in $GITKV_REPO" >/dev/stderr
+echo "Updated $key in $KLAVG_REPO" >/dev/stderr
 
 branch=$(git branch --show-current 2>/dev/null || echo "main")
 
@@ -85,7 +86,7 @@ rawify_url() {
   esac
 }
 
-repo_url=$(echo "$GITKV_REPO" | sed -e 's/\.git$//')
+repo_url=$(echo "$KLAVG_REPO" | sed -e 's/\.git$//')
 raw_url=$(rawify_url "$repo_url")
 echo "$raw_url"
 
